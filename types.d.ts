@@ -1,3 +1,4 @@
+// Speech Recognition API types
 interface SpeechRecognition extends EventTarget {
   continuous: boolean;
   interimResults: boolean;
@@ -48,3 +49,28 @@ declare var webkitSpeechRecognition: {
   prototype: SpeechRecognition;
   new(): SpeechRecognition;
 };
+
+// RealtimeVisemePlayer class types
+declare class RealtimeVisemePlayer {
+  dispatchCallback: (e: { phoneme: string; start?: number; end?: number }) => void;
+  currentSequence: any[];
+  audioElement: HTMLAudioElement | null;
+  animationFrame: number | null;
+  isPlaying: boolean;
+  pendingSequences: Map<string, any>;
+  currentResponseId: string | null;
+  startTime: number | null;
+  fallbackTimer: number | null;
+
+  constructor(dispatchCallback: (e: { phoneme: string; start?: number; end?: number }) => void);
+  start(sequence: any[], audioElement?: HTMLAudioElement | null): void;
+  stop(): void;
+}
+
+// Global type extensions
+declare global {
+  interface Window {
+    SpeechRecognition: typeof SpeechRecognition;
+    webkitSpeechRecognition: typeof SpeechRecognition;
+  }
+}
