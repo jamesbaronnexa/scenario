@@ -1,0 +1,169 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import Script from "next/script";
+
+export default function TalkingHeadTestPage() {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const headRef = useRef<any>(null);
+  const [ready, setReady] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [text, setText] = useState("Kia ora! How’s your day going?");
+
+  // Simple logger
+  const log = (...args: any[]) => console.log("[TalkingHeadTest]", ...args);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function boot() {
+      if (!containerRef.current) return;
+
+      try {
+        setLoading(true);
+        // Import TalkingHead via the import map (below)
+        const mod = await import("talkinghead");
+        const { TalkingHead } = mod as any;
+
+        // Create instance (no JWT; we proxy TTS locally at /api/gtts)
+        const th = new TalkingHead(containerRef.current, {
+          ttsEndpoint: "/api/gtts",
+          lipsyncModules: ["en"], // built-in English
+          mixerGainSpeech: 2.2,   // output gain
+          // optional niceties:
+          antialias: true,
+          shadow: false,
+          quality: "medium",
+        });
+
+        headRef.current = th;
+
+        // Load & show an RPM avatar (uses a public demo GLB)
+        // Replace url with your own RPM GLB when you have one
+        await th.showAvatar({
+          url:
+            "https://models.readyplayer.me/64bfa15f0e72c63d7c3934a6.glb" +
+            "?morphTargets=ARKit,Oculus+Visemes,mouthOpen,mouthSmile,eyesClosed,eyesLookUp,eyesLookDown" +
+            "&textureSizeLimit=1024&textureFormat=png",
+          body: "F",
+          avatarMood: "neutral",
+          ttsLang: "en-GB",
+          ttsVoice: "en-GB-Standard-A",
+          lipsyncLang: "en",
+        });
+
+        if (!cancelled) setReady(true);
+        log("Avatar ready");
+      } catch (err) {
+        console.error(err);
+        alert("Failed to initialize TalkingHead. Check console for details.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    boot();
+
+    return () => {
+      cancelled = true;
+      try {
+        // Clean up if class exposes dispose/stop; safe to ignore if not present
+        headRef.current?.dispose?.();
+        headRef.current = null;
+      } catch {}
+    };
+  }, []);
+
+  const speak = async () => {
+    try {
+      if (!headRef.current) return;
+      const t = text.trim();
+      if (!t) return;
+      await headRef.current.speakText(t);
+    } catch (e) {
+      console.error(e);
+      alert("Speak failed. See console.");
+    }
+  };
+
+  const sayDemo = async () => {
+    setText("Kia ora! Sweet as — keen for a quick chat?");
+    await speak();
+  };
+
+  return (
+    <main className="min-h-screen w-full flex flex-col items-center p-6 gap-6 bg-gray-50">
+      {/* Import map for three + addons + talkinghead (browser-resolved) */}
+      <Script
+        id="importmap"
+        type="importmap"
+        strategy="afterInteractive"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            imports: {
+              "three":
+                "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+              "three/addons/":
+                "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+              "talkinghead":
+                "https://cdn.jsdelivr.net/gh/met4citizen/TalkingHead@1.5/modules/talkinghead.mjs",
+            },
+          }),
+        }}
+      />
+
+      <div className="w-full max-w-4xl">
+        <h1 className="text-2xl font-bold text-center mb-2">
+          TalkingHead — Minimal Test
+        </h1>
+        <p className="text-center text-gray-600 mb-4">
+          Loads an RPM avatar and uses Google TTS via <code>/api/gtts</code>.
+        </p>
+
+        {/* Avatar container — TalkingHead attaches its canvas here */}
+        <div
+          ref={containerRef}
+          className="relative w-full h-[520px] bg-white rounded-lg shadow-inner border overflow-hidden"
+        />
+
+        <div className="mt-6 bg-white rounded-lg shadow p-4 flex flex-col gap-3">
+          <div className="text-sm">
+            Status:{" "}
+            <span className="font-semibold">
+              {loading ? "Loading…" : ready ? "Ready" : "Idle"}
+            </span>
+          </div>
+
+          <div className="flex gap-2">
+            <input
+              className="flex-1 border rounded px-3 py-2"
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder="Type something for the avatar to say…"
+              onKeyDown={(e) => e.key === "Enter" && speak()}
+            />
+            <button
+              onClick={speak}
+              disabled={!ready}
+              className="px-4 py-2 rounded bg-blue-600 text-white disabled:opacity-50"
+            >
+              Say
+            </button>
+            <button
+              onClick={sayDemo}
+              disabled={!ready}
+              className="px-4 py-2 rounded bg-indigo-600 text-white disabled:opacity-50"
+            >
+              Demo line
+            </button>
+          </div>
+
+          <p className="text-xs text-gray-500">
+            If you see 404 on <code>/api/gtts</code>, add the API route and set{" "}
+            <code>GOOGLE_TTS_API_KEY</code>.
+          </p>
+        </div>
+      </div>
+    </main>
+  );
+}
