@@ -666,7 +666,7 @@ function RPMAvatar({ character, avatarUrl }: Pick<RPMAvatarProps, "character" | 
     <group ref={groupRef}>
       {gltf?.scene ? (
         <>
-          <primitive object={gltf.scene} scale={1} position={[0, -1.6, 0]} />
+          <primitive object={gltf.scene} scale={4} position={[0, -6, 0]} />
           <EnvironmentMapping gltf={gltf} />
         </>
       ) : (
