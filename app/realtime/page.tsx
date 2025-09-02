@@ -635,13 +635,13 @@ export default function RealtimePage() {
           },
         }));
 
-        dc.send(JSON.stringify({
-          type: "response.create",
-          response: {
-            modalities: ["audio", "text"],
-            instructions: "Give a one-sentence spoken greeting to start the conversation.",
-          },
-        }));
+        //dc.send(JSON.stringify({
+        //  type: "response.create",
+        //  response: {
+        //    modalities: ["audio", "text"],
+        //    instructions: "Wait for the user to interact",
+        //  },
+        //}));
       };
 
       // Enhanced message handler with perfect synchronization
@@ -821,22 +821,26 @@ export default function RealtimePage() {
 
   return (
     <main 
-      className="w-full h-screen relative bg-gray-900 overflow-hidden"
-      onClick={enableAudio}
-    >
-      {/* Full Screen Avatar */}
-      <div className="absolute inset-0">
-        <Avatar3D
-          character="Kea"
-          isListening={isListening}
-          isSpeaking={isSpeaking}
-          audioLevel={audioLevel}
-          remoteAudioStream={remoteAudioStream}
-          avatarUrl="https://models.readyplayer.me/68b61ace83ef17237fd6e69f.glb?pose=T&morphTargets=ARKit,Oculus%20Visemes&textureAtlas=1024"
-          realtimeDC={dcRef.current}
-          onPhonemeSink={setPhonemeSink}
-        />
-      </div>
+  className="w-full h-screen relative overflow-hidden"
+  style={{ background: 'transparent' }}
+  onClick={enableAudio}
+>
+  {/* Full Screen Avatar */}
+  <div 
+    className="absolute inset-0 w-full h-full"
+    style={{ background: 'transparent' }}
+  >
+    <Avatar3D
+      character="Kea"
+      isListening={isListening}
+      isSpeaking={isSpeaking}
+      audioLevel={audioLevel}
+      remoteAudioStream={remoteAudioStream}
+      avatarUrl="https://models.readyplayer.me/68b61ace83ef17237fd6e69f.glb?pose=T&morphTargets=ARKit,Oculus%20Visemes&textureAtlas=1024"
+      realtimeDC={dcRef.current}
+      onPhonemeSink={setPhonemeSink}
+    />
+  </div>
 
       {/* Single Start Button Overlay */}
       {!connected && !connecting && (
