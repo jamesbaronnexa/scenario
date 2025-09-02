@@ -182,7 +182,7 @@ export default function RealtimePage() {
     rec.lang = "en-NZ";
 
     rec.onstart = () => {
-      setRecording(true);
+      setIsRecording(true);
       setLiveText("");
       finalSentRef.current = false;
     };
@@ -228,12 +228,12 @@ export default function RealtimePage() {
 
     rec.onerror = (event) => {
       console.error("Speech recognition error:", event.error);
-      setRecording(false);
+      setIsRecording(false);
       setLiveText("");
     };
 
     rec.onend = () => {
-      setRecording(false);
+      setIsRecording(false);
       if (!finalSentRef.current) {
         setLiveText("");
       }
