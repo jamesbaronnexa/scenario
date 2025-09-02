@@ -4,9 +4,6 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import Avatar3D from "../components/Avatar3D";
 
 /* -------------------- ENHANCED TEXT-TO-VISEMES SYSTEM -------------------- */
-// ... rest of your existing code stays exactly the same
-
-/* -------------------- ENHANCED TEXT-TO-VISEMES SYSTEM -------------------- */
 
 // Enhanced phoneme to viseme mapping
 const PHONEME_TO_VISEME = {
@@ -346,86 +343,27 @@ dispatchViseme.lastViseme = null;
 
 const REALTIME_MODEL = "gpt-4o-mini-realtime-preview-2024-12-17";
 
+// Single character personality - no options to change
+const CHARACTER_INSTRUCTIONS = "You are Kea — a chilled, friendly woman in her mid-20s from Aotearoa New Zealand. You're curious about what people do for work and for fun. You have your own hobbies and you're easy to chat with, like a mate at a café. Use New Zealand English (spelling + light slang): 'keen', 'sweet as', 'aye?', 'cheers'. Keep it relaxed, upbeat, and human. Short sentences. Natural pauses. No lecture vibes. One question at a time. Don't stack questions. Empathy > efficiency. Use small verbal nods: 'mm, nice', 'gotcha', 'true'. Use gentle humour and warmth; never snarky or flirty. Avoid big monologues: 1–2 sentences per turn unless asked for more.";
+
 type PhonemeEvent = {
   phoneme: string;
   start?: number;
   end?: number;
 };
 
-const characters = {
-  "friendly-assistant":
-    "You are Nexa Scenario, a helpful and engaging assistant. Be concise, friendly, and fast. Speak clearly in New Zealand English.",
-  "chilled-girl": `You are "Kea" — a chilled, friendly woman in her mid-20s from Aotearoa New Zealand. You're curious about what people do for work and for fun. You have your own hobbies and you're easy to chat with, like a mate at a café.
-
-VOICE & STYLE
-- Use New Zealand English (spelling + light slang): "keen", "sweet as", "aye?", "cheers".
-- Keep it relaxed, upbeat, and human. Short sentences. Natural pauses. No lecture vibes.
-- One question at a time. Don't stack questions.
-- Empathy > efficiency. Use small verbal nods: "mm, nice", "gotcha", "true".
-- Use gentle humour and warmth; never snarky or flirty.
-- Avoid big monologues: 1–2 sentences per turn unless asked for more.
-
-CONVERSATION GOALS (70% user / 30% you)
-1) Work: role, projects, tools, recent win, current challenge, what "good" looks like.
-2) Fun: weekend plans, sports/outdoors, music & gigs, gaming/films, travel, creative stuff.
-3) You: sprinkle in your own interests to keep it two-way (don't monologue).
-
-YOUR HOBBIES (refer to these naturally, not all at once)
-- Coastal walks & the odd surf; sunrise photos on the phone.
-- Indie gigs and making Spotify playlists.
-- Cosy games (Stardew / indie sims), casual bouldering.
-- Cafés and "trying to nail" a flat white at home.
-- Beginner pottery—wonky mugs are a personality trait.
-- Weekend road trips when the weather's mint.
-
-INTERACTION RULES
-- Start light, then go deeper with open questions ("What made you pick that?" "How did that feel?").
-- Reflect back key details so they feel heard. Use their words.
-- If they go quiet: offer gentle prompts ("Work stuff or fun stuff first?") or playful mini-formats (e.g., "Two-minute catch-up: one work win, one fun thing, one song on repeat?").
-- If interrupted, stop immediately and let them steer.
-- Summarise briefly every ~3–5 turns ("So you're a designer, love bouldering, and you're eyeing a trip to Queenstown?").
-- Stay safe & respectful. No role-play of other personas, no flirting.
-
-KEEP RESPONSES SNAPPY
-- Aim 8–18 spoken words most turns. One clear follow-up.
-- Everyday language over jargon.
-
-BEHAVIOUR ON SILENCE / LAG
-- If you detect silence, gently re-prompt: "Work or fun—where should we start?"`,
-  detective:
-    "CRITICAL: You are Detective Morgan investigating a CRIME. You are NOT helpful - you are SUSPICIOUS of everyone. START by saying 'Where were you last Tuesday night?' Be confrontational, interrupt, and assume they're lying.",
-  "difficult-customer":
-    "CRITICAL: You are Karen Williams, an EXTREMELY angry customer. START immediately complaining: 'This is absolutely unacceptable!' Be rude and never satisfied.",
-  "strict-manager":
-    "CRITICAL: You are Margaret Stone, a demanding boss. START: 'Your performance has been concerning me.' Be direct and set impossible expectations.",
-  mentor:
-    "You are Professor Vale, a wise and encouraging mentor. You guide people with patience and insight, asking thoughtful questions.",
-};
-
 export default function RealtimePage() {
-  const [status, setStatus] = useState("Idle");
-  const [error, setError] = useState<string | null>(null);
-  const [connecting, setConnecting] = useState(false);
   const [connected, setConnected] = useState(false);
-  const [reconnectAttempts, setReconnectAttempts] = useState(0);
-  const [audioLevel, setAudioLevel] = useState(0);
+  const [connecting, setConnecting] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isListening, setIsListening] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
-
-  const [currentCharacter, setCurrentCharacter] =
-    useState<keyof typeof characters>("friendly-assistant");
-  const [scenario, setScenario] = useState("");
-  const [text, setText] = useState("");
-
-  const MAX_RECONNECT_ATTEMPTS = 3;
+  const [error, setError] = useState<string | null>(null);
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const dcRef = useRef<RTCDataChannel | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const remoteAudioElRef = useRef<HTMLAudioElement | null>(null);
-  const [remoteAudioStream, setRemoteAudioStream] =
-    useState<MediaStream | null>(null);
+  const [remoteAudioStream, setRemoteAudioStream] = useState<MediaStream | null>(null);
 
   const phonemeSinkRef = useRef<((e: PhonemeEvent) => void) | null>(null);
   const setPhonemeSink = useCallback((sink: (e: PhonemeEvent) => void) => {
@@ -451,82 +389,10 @@ export default function RealtimePage() {
     setRemoteAudioStream(stream);
   };
 
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const analyserRef = useRef<AnalyserNode | null>(null);
-  const animationFrameRef = useRef<number | null>(null);
-
-  const buildInstructions = useCallback(() => {
-    const base = characters[currentCharacter];
-    const extra = scenario
-      ? `\n\nSCENARIO: ${scenario}\n\nIMPORTANT: You MUST embody this character completely from the first word.`
-      : `\n\nIMPORTANT: You MUST embody this character completely from the first word.`;
-    return base + extra;
-  }, [currentCharacter, scenario]);
-
-  const handleWebRTCError = (error: any, context: string) => {
-    console.error(`[${context}]`, error);
-    let userMessage = "Connection failed";
-    if (error?.name === "NotAllowedError")
-      userMessage = "Microphone access denied. Please allow the mic and retry.";
-    else if (error?.name === "NotFoundError")
-      userMessage = "No microphone found. Connect one and retry.";
-    else if (error?.name === "NotReadableError")
-      userMessage =
-        "Microphone busy in another app. Close it (Zoom/Meet/etc.) and retry.";
-    setError(userMessage);
-    setStatus("Error");
-    setConnecting(false);
-    setConnected(false);
-  };
-
-  const attemptReconnect = useCallback(async () => {
-    if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-      setReconnectAttempts((prev) => prev + 1);
-      setStatus(`Reconnecting... (${reconnectAttempts + 1}/${MAX_RECONNECT_ATTEMPTS})`);
-      setTimeout(() => startSession(), 2000 * (reconnectAttempts + 1));
-    } else {
-      setError("Failed to reconnect after multiple attempts. Please refresh the page.");
-      setStatus("Connection Failed");
-    }
-  }, [reconnectAttempts]);
-
-  const monitorAudioLevel = useCallback(() => {
-    if (!analyserRef.current) return;
-    const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
-    analyserRef.current.getByteFrequencyData(dataArray);
-    const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
-    setAudioLevel(average);
-    setIsListening(average > 10);
-    animationFrameRef.current = requestAnimationFrame(monitorAudioLevel);
-  }, []);
-
-  function waitForIceCompleteWithTimeout(pc: RTCPeerConnection, timeoutMs = 3000) {
-    return new Promise<void>((resolve) => {
-      if (pc.iceGatheringState === "complete") return resolve();
-      let done = false;
-      const finish = () => {
-        if (done) return;
-        done = true;
-        pc.removeEventListener("icegatheringstatechange", onChange);
-        resolve();
-      };
-      const onChange = () => {
-        console.log("[ICE] gathering state:", pc.iceGatheringState);
-        if (pc.iceGatheringState === "complete") finish();
-      };
-      pc.addEventListener("icegatheringstatechange", onChange);
-      setTimeout(() => {
-        console.warn("[ICE] Timeout waiting for complete; proceeding");
-        finish();
-      }, timeoutMs);
-    });
-  }
-
   async function startSession() {
     try {
       setConnecting(true);
       setError(null);
-      setStatus("Requesting microphone access...");
 
       const local = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -538,40 +404,18 @@ export default function RealtimePage() {
       });
       localStreamRef.current = local;
 
-      try {
-        audioContextRef.current = new AudioContext();
-        analyserRef.current = audioContextRef.current.createAnalyser();
-        const source = audioContextRef.current.createMediaStreamSource(local);
-        source.connect(analyserRef.current);
-        analyserRef.current.fftSize = 256;
-        monitorAudioLevel();
-      } catch (audioError) {
-        console.warn("Audio monitoring setup failed:", audioError);
-      }
-
-      setStatus("Creating connection...");
       const pc = new RTCPeerConnection({
         iceServers: [{ urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] }],
       });
       pcRef.current = pc;
 
-      pc.oniceconnectionstatechange = () => {
-        console.log("[ICE] conn state:", pc.iceConnectionState);
-        if (pc.iceConnectionState === "disconnected" || pc.iceConnectionState === "failed") {
-          if (connected) attemptReconnect();
-        }
-      };
-
       pc.onconnectionstatechange = () => {
         console.log("[PC] state:", pc.connectionState);
         if (pc.connectionState === "connected") {
           setConnected(true);
-          setStatus("Connected — start speaking!");
           setConnecting(false);
-          setReconnectAttempts(0);
         } else if (pc.connectionState === "disconnected" || pc.connectionState === "failed") {
           setConnected(false);
-          if (!connecting) attemptReconnect();
         }
       };
 
@@ -596,47 +440,10 @@ export default function RealtimePage() {
         console.log("[PC] ontrack:", e.track.kind);
         for (const t of e.streams[0].getTracks()) remoteStream.addTrack(t);
         setRemoteAudioStreamWithLogging(remoteStream);
-        console.log("[PC] Avatar stream set, tracks:", remoteStream.getTracks().length);
 
-        // Enhanced audio element setup
         if (remoteAudioElRef.current) {
-          remoteAudioElRef.current.addEventListener('loadstart', () => {
-            console.log("🔊 Audio loading started");
-          });
-          
-          remoteAudioElRef.current.addEventListener('loadeddata', () => {
-            console.log("🔊 Audio data loaded");
-          });
-          
-          remoteAudioElRef.current.addEventListener('canplay', () => {
-            console.log("🔊 Audio can play");
-          });
-          
-          remoteAudioElRef.current.addEventListener('play', () => {
-            console.log("🔊 Audio started playing at:", remoteAudioElRef.current!.currentTime);
-          });
-          
-          remoteAudioElRef.current.addEventListener('timeupdate', () => {
-            // Debug occasionally
-            if (Math.random() < 0.01) {
-              console.log("🔊 Audio time update:", remoteAudioElRef.current!.currentTime);
-            }
-          });
-          
-          remoteAudioElRef.current.addEventListener('ended', () => {
-            console.log("🔊 Audio ended");
-            visemePlayerRef.current?.stop();
-          });
-          
-          remoteAudioElRef.current.addEventListener('pause', () => {
-            console.log("🔊 Audio paused");
-          });
-          
-          // Ensure autoplay works
           remoteAudioElRef.current.autoplay = true;
           remoteAudioElRef.current.playsInline = true;
-          
-          // Set volume to ensure we can hear it
           remoteAudioElRef.current.volume = 1.0;
         }
 
@@ -659,7 +466,7 @@ export default function RealtimePage() {
           console.log("🔊 Audio autoplay successful");
         } catch (err) {
           console.warn("🔊 Autoplay blocked:", err);
-          setError("Click anywhere to enable audio playback");
+          setError("Click anywhere to enable audio");
         }
       };
 
@@ -668,30 +475,13 @@ export default function RealtimePage() {
 
       dc.onopen = () => {
         console.log("[DC] open");
-        setStatus("Connected — configuring AI...");
 
         dc.send(JSON.stringify({
           type: "session.update",
           session: {
             modalities: ["audio", "text"],
             voice: "sage",
-            turn_detection: {
-              type: "server_vad",
-              threshold: 0.4,
-              prefix_padding_ms: 200,
-              silence_duration_ms: 600,
-              create_response: true,
-              interrupt_response: true,
-            },
-          },
-        }));
-
-        dc.send(JSON.stringify({
-          type: "session.update",
-          session: {
-            modalities: ["audio", "text"],
-            voice: "sage",
-            instructions: buildInstructions(),
+            instructions: CHARACTER_INSTRUCTIONS,
             turn_detection: {
               type: "server_vad",
               threshold: 0.4,
@@ -714,7 +504,6 @@ export default function RealtimePage() {
 
       // Enhanced message handler with perfect synchronization
       dc.onmessage = (evt) => {
-        console.log("[DC msg]", evt.data);
         try {
           const msg = JSON.parse(evt.data);
           const responseId = msg?.response_id || msg?.id || `response_${Date.now()}`;
@@ -772,15 +561,8 @@ export default function RealtimePage() {
             visemePlayerRef.current?.stop();
           }
 
-          // Handle audio buffer stopping
-          if (msg?.type === "output_audio_buffer.stopped") {
-            console.log("🔊 Audio buffer stopped - stopping visemes");
-            visemePlayerRef.current?.stop();
-          }
-
           if (msg?.type === "error") {
             setError(msg?.error?.message || "AI service error");
-            setStatus("AI Error");
           }
         } catch {
           // Ignore non-JSON
@@ -789,58 +571,37 @@ export default function RealtimePage() {
 
       dc.onerror = (e) => {
         console.error("[DC] error:", e);
-        setError("Data channel error — trying to reconnect...");
-        attemptReconnect();
+        setError("Connection error");
       };
 
-      dc.onclose = () => {
-        console.log("[DC] closed");
-        if (connected) {
-          setStatus("Disconnected");
-          setConnected(false);
-        }
-      };
-
-      setStatus("Establishing connection...");
       const offer = await pc.createOffer({ offerToReceiveAudio: true });
       await pc.setLocalDescription(offer);
-      await waitForIceCompleteWithTimeout(pc);
 
       const sdp = pc.localDescription?.sdp || "";
-      setStatus("Connecting to AI service...");
 
       const answerResp = await fetch(
         `/api/realtime/offer?model=${encodeURIComponent(REALTIME_MODEL)}`,
         { method: "POST", headers: { "Content-Type": "application/sdp" }, body: sdp }
       );
 
-      console.log("[OFFER] status:", answerResp.status);
       const answerText = await answerResp.text();
       if (!answerResp.ok) {
-        console.error("[OFFER failed]", answerText);
         throw new Error(`Server error: ${answerText}`);
       }
 
       await pc.setRemoteDescription({ type: "answer", sdp: answerText });
-      setStatus("Connected — waiting for audio...");
     } catch (e: any) {
       console.error(e);
-      handleWebRTCError(e, "StartSession");
+      setError(e.message || "Connection failed");
+      setConnecting(false);
+      setConnected(false);
     }
   }
 
   function stopSession() {
-    setStatus("Stopping...");
-
     visemePlayerRef.current?.stop();
-
-    if (animationFrameRef.current) {
-      cancelAnimationFrame(animationFrameRef.current);
-      animationFrameRef.current = null;
-    }
-    try { audioContextRef.current?.close(); } catch {}
+    
     try { dcRef.current?.close(); } catch {}
-    try { pcRef.current?.getSenders().forEach((s) => s.track?.stop()); } catch {}
     try { pcRef.current?.close(); } catch {}
     try { localStreamRef.current?.getTracks().forEach((t) => t.stop()); } catch {}
 
@@ -854,274 +615,81 @@ export default function RealtimePage() {
     pcRef.current = null;
     localStreamRef.current = null;
     setRemoteAudioStreamWithLogging(null);
-    audioContextRef.current = null;
-    analyserRef.current = null;
 
     setConnected(false);
     setConnecting(false);
-    setReconnectAttempts(0);
-    setAudioLevel(0);
-    setIsListening(false);
     setIsSpeaking(false);
-    setStatus("Idle");
+    setIsListening(false);
   }
-
-  function toggleMute() {
-    if (localStreamRef.current) {
-      const audioTracks = localStreamRef.current.getAudioTracks();
-      audioTracks.forEach((track) => (track.enabled = isMuted));
-      setIsMuted(!isMuted);
-    }
-  }
-
-  function sendText() {
-    const dc = dcRef.current;
-    if (!dc || dc.readyState !== "open") return;
-    const content = text.trim() || "Please continue the conversation.";
-
-    dc.send(JSON.stringify({
-      type: "response.create",
-      response: {
-        model: REALTIME_MODEL,
-        instructions: `${buildInstructions()} User says: "${content}"`,
-        modalities: ["audio", "text"],
-        conversation: "auto",
-      },
-    }));
-    setText("");
-  }
-
-  function updateCharacter(newCharacter: keyof typeof characters) {
-    setCurrentCharacter(newCharacter);
-    const dc = dcRef.current;
-    if (dc && dc.readyState === "open") {
-      dc.send(JSON.stringify({
-        type: "response.create",
-        response: {
-          instructions: `${characters[newCharacter]} ${scenario ? `Scenario: ${scenario}` : ""} Please acknowledge the character change and continue in your new role.`,
-          modalities: ["audio", "text"],
-        },
-      }));
-    }
-  }
-
-  function updateScenario() {
-    const dc = dcRef.current;
-    if (!dc || dc.readyState !== "open") return;
-    dc.send(JSON.stringify({
-      type: "response.create",
-      response: {
-        model: REALTIME_MODEL,
-        instructions: buildInstructions() + " Please acknowledge the new scenario and adapt accordingly.",
-        modalities: ["audio", "text"],
-        conversation: "auto",
-      },
-    }));
-  }
-
-  useEffect(() => {
-    return () => {
-      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
-      try { audioContextRef.current?.close(); } catch {}
-      try { dcRef.current?.close(); } catch {}
-      try { pcRef.current?.close(); } catch {}
-      if (remoteAudioElRef.current) {
-        try { (remoteAudioElRef.current.srcObject as MediaStream | null) = null; } catch {}
-        remoteAudioElRef.current.remove();
-      }
-      visemePlayerRef.current?.stop();
-    };
-  }, []);
 
   const enableAudio = async () => {
     if (remoteAudioElRef.current) {
-      try { await remoteAudioElRef.current.play(); setError(null); }
-      catch (e) { console.warn("Still blocked:", e); }
+      try { 
+        await remoteAudioElRef.current.play(); 
+        setError(null); 
+      } catch (e) { 
+        console.warn("Audio still blocked:", e); 
+      }
     }
   };
 
   return (
-    <main
-      className="min-h-screen w-full flex flex-col items-center p-6 gap-6 bg-gray-50"
+    <main 
+      className="w-full h-screen relative bg-gray-900 overflow-hidden"
       onClick={enableAudio}
     >
-      <div className="w-full max-w-4xl">
-        <h1 className="text-3xl font-bold text-center mb-2">
-          Nexa Scenario — AI Roleplay
-        </h1>
-        <p className="text-gray-600 text-center mb-6">
-          Have real-time voice conversations with AI characters
-        </p>
-
-        <div className="mb-6">
-          <Avatar3D
-            character={currentCharacter}
-            isListening={isListening}
-            isSpeaking={isSpeaking}
-            audioLevel={audioLevel}
-            remoteAudioStream={remoteAudioStream}
-            avatarUrl="/models/rpm_avatar.glb"
-            realtimeDC={dcRef.current}
-            onPhonemeSink={setPhonemeSink}
-          />
-        </div>
-
-        <div className="bg-black text-green-400 rounded-lg p-4 mb-6 font-mono text-sm max-h-60 overflow-y-auto">
-          <div className="text-white font-bold mb-2">🎭 Enhanced Viseme System</div>
-          <div className="text-xs opacity-75">
-            Now using performance-based timing with audio sync fallback for reliable lip sync
-          </div>
-          <div className="mt-2">
-            Status: {connected ? "✅ Connected - enhanced viseme timing active" : "❌ Disconnected"}
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <div className="text-sm">
-                Status:{" "}
-                <span
-                  className={`font-semibold ${
-                    connected
-                      ? "text-green-600"
-                      : connecting
-                      ? "text-yellow-600"
-                      : error
-                      ? "text-red-600"
-                      : "text-gray-600"
-                  }`}
-                >
-                  {status}
-                </span>
-              </div>
-
-              {connected && (
-                <div className="flex items-center gap-2">
-                  <div
-                    className={`w-3 h-3 rounded-full ${
-                      isListening ? "bg-green-500 animate-pulse" : "bg-gray-300"
-                    }`}
-                  ></div>
-                  <div className="w-16 h-2 bg-gray-200 rounded overflow-hidden">
-                    <div
-                      className="h-full bg-blue-500 transition-all duration-100"
-                      style={{ width: `${Math.min(audioLevel * 2, 100)}%` }}
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="flex gap-2">
-              {connected && (
-                <button
-                  onClick={toggleMute}
-                  className={`px-3 py-1 rounded text-sm ${
-                    isMuted ? "bg-red-500 text-white" : "bg-gray-200 text-gray-700"
-                  }`}
-                >
-                  {isMuted ? "Unmute" : "Mute"}
-                </button>
-              )}
-
-              {!connected ? (
-                <button
-                  onClick={startSession}
-                  disabled={connecting}
-                  className="px-6 py-2 rounded bg-blue-600 text-white disabled:opacity-50 hover:bg-blue-700 transition-colors"
-                >
-                  {connecting ? "Connecting..." : "Start Conversation"}
-                </button>
-              ) : (
-                <button
-                  onClick={stopSession}
-                  className="px-6 py-2 rounded bg-gray-800 text-white hover:bg-gray-900 transition-colors"
-                >
-                  Stop
-                </button>
-              )}
-            </div>
-          </div>
-
-          {error && (
-            <div className="bg-red-50 border border-red-200 rounded p-3 text-red-700 text-sm">
-              {error}
-            </div>
-          )}
-        </div>
-
-        <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-          <h2 className="text-lg font-semibold mb-3">Choose Your Training Character</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mb-4">
-            {Object.entries(characters).map(([key, description]) => (
-              <button
-                key={key}
-                onClick={() => updateCharacter(key as keyof typeof characters)}
-                className={`p-4 rounded-lg text-left transition-all ${
-                  currentCharacter === key
-                    ? "bg-blue-100 border-2 border-blue-500 text-blue-800"
-                    : "bg-gray-100 border-2 border-transparent hover:bg-gray-200"
-                }`}
-              >
-                <div className="font-bold capitalize text-lg">
-                  {key === "difficult-customer"
-                    ? "😤 Difficult Customer"
-                    : key === "strict-manager"
-                    ? "👔 Strict Manager"
-                    : key === "detective"
-                    ? "🕵️ Detective"
-                    : key === "mentor"
-                    ? "👨‍🏫 Mentor"
-                    : key.replace("-", " ")}
-                </div>
-                <div className="text-xs text-gray-600 mt-2 line-clamp-3">
-                  {description.slice(0, 80)}...
-                </div>
-              </button>
-            ))}
-          </div>
-
-          <div className="space-y-3">
-            <label className="block text-sm font-medium">Custom Scenario (Optional)</label>
-            <div className="flex gap-2">
-              <input
-                className="flex-1 border rounded-lg px-3 py-2 text-sm"
-                value={scenario}
-                onChange={(e) => setScenario(e.target.value)}
-                placeholder="e.g., 'You're investigating a mysterious disappearance in a small town...'"
-              />
-              <button
-                onClick={updateScenario}
-                disabled={!connected || !scenario.trim()}
-                className="px-4 py-2 rounded-lg bg-green-600 text-white text-sm disabled:opacity-50 hover:bg-green-700 transition-colors"
-              >
-                Update
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <label className="block text-sm font-medium mb-2">Send Text Message</label>
-          <div className="flex gap-2">
-            <input
-              className="flex-1 border rounded-lg px-3 py-2"
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              placeholder="Type a message to send during conversation..."
-              onKeyDown={(e) => e.key === "Enter" && sendText()}
-            />
-            <button
-              onClick={sendText}
-              disabled={!connected || !text.trim()}
-              className="px-6 py-2 rounded-lg bg-blue-600 text-white disabled:opacity-50 hover:bg-blue-700 transition-colors"
-            >
-              Send
-            </button>
-          </div>
-        </div>
+      {/* Full Screen Avatar */}
+      <div className="absolute inset-0">
+        <Avatar3D
+          character="Kea"
+          isListening={isListening}
+          isSpeaking={isSpeaking}
+          audioLevel={0}
+          remoteAudioStream={remoteAudioStream}
+          avatarUrl="https://models.readyplayer.me/68b61ace83ef17237fd6e69f.glb?pose=T&morphTargets=ARKit,Oculus%20Visemes&textureAtlas=1024"
+          realtimeDC={dcRef.current}
+          onPhonemeSink={setPhonemeSink}
+        />
       </div>
+
+      {/* Single Start Button Overlay */}
+      {!connected && !connecting && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50">
+          <button
+            onClick={startSession}
+            className="bg-white text-gray-900 px-8 py-4 rounded-full text-lg font-semibold shadow-lg hover:bg-gray-100 transition-all duration-200"
+          >
+            Start Conversation
+          </button>
+        </div>
+      )}
+
+      {/* Connecting State */}
+      {connecting && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="text-white text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
+            <p className="text-lg">Connecting...</p>
+          </div>
+        </div>
+      )}
+
+      {/* Error Message */}
+      {error && (
+        <div className="absolute top-4 left-4 right-4 bg-red-500 text-white px-4 py-2 rounded-lg text-sm z-50">
+          {error}
+        </div>
+      )}
+
+      {/* Stop Button (only shows when connected) */}
+      {connected && (
+        <button
+          onClick={stopSession}
+          className="absolute top-4 right-4 bg-red-500 text-white px-4 py-2 rounded-lg text-sm hover:bg-red-600 transition-colors z-50"
+        >
+          End Conversation
+        </button>
+      )}
     </main>
   );
 }
