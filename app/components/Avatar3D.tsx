@@ -739,7 +739,7 @@ export default function RPMAvatar3D({
   const noVisemes = performance.now() - (lastVisemeAtRef.current || 0) > 1000;
 
   return (
-    <div className="relative w-full h-96 bg-gradient-to-b from-purple-100 to-white rounded-lg overflow-hidden">
+    <div className="relative w-full h-full bg-gradient-to-b from-purple-100 to-white overflow-hidden">
       <Canvas camera={{ position: [0, 0, 3], fov: 50 }} shadows>
         {/* Professional lighting setup similar to Ready Player Me */}
         
