@@ -1,4 +1,3 @@
-// @ts-nocheck
 "use client";
 import { useEffect, useRef, useState, useCallback } from "react";
 import Avatar3D from "../components/Avatar3D";
@@ -217,9 +216,9 @@ class RealtimeVisemePlayer {
       let syncTimeMs = elapsedMs;
       if (this.audioElement && !this.audioElement.paused && this.audioElement.currentTime > 0) {
         syncTimeMs = this.audioElement.currentTime * 1000;
-        // Debug very occasionally
-        if (Math.random() < 0.01) {
-          console.log(`🎭 Audio sync: ${Math.round(syncTimeMs)}ms`);
+        // Debug occasionally
+        if (Math.random() < 0.05) {
+          console.log(`🎭 Audio sync: ${Math.round(syncTimeMs)}ms, fallback: ${Math.round(elapsedMs)}ms`);
         }
       }
       
@@ -331,15 +330,10 @@ function dispatchViseme(
   start?: number,
   end?: number
 ) {
-  // Only log viseme changes, not repeats
-  if (!dispatchViseme.lastViseme || dispatchViseme.lastViseme !== viseme) {
-    console.log(`🎯 VISEME: ${viseme} (${value})`);
-    dispatchViseme.lastViseme = viseme;
-  }
+  console.log(`🎯 DISPATCHING VISEME: ${viseme} (value: ${value})`);
   sink?.({ phoneme: viseme, start, end });
   window.dispatchEvent(new CustomEvent("phoneme", { detail: { viseme, value } }));
 }
-dispatchViseme.lastViseme = null;
 
 const REALTIME_MODEL = "gpt-4o-mini-realtime-preview-2024-12-17";
 
@@ -353,17 +347,24 @@ type PhonemeEvent = {
 };
 
 export default function RealtimePage() {
-  const [connected, setConnected] = useState(false);
+  const [status, setStatus] = useState("Idle");
+  const [error, setError] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
+  const [connected, setConnected] = useState(false);
+  const [reconnectAttempts, setReconnectAttempts] = useState(0);
+  const [audioLevel, setAudioLevel] = useState(0);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isListening, setIsListening] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [isMuted, setIsMuted] = useState(false);
+
+  const MAX_RECONNECT_ATTEMPTS = 3;
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const dcRef = useRef<RTCDataChannel | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const remoteAudioElRef = useRef<HTMLAudioElement | null>(null);
-  const [remoteAudioStream, setRemoteAudioStream] = useState<MediaStream | null>(null);
+  const [remoteAudioStream, setRemoteAudioStream] =
+    useState<MediaStream | null>(null);
 
   const phonemeSinkRef = useRef<((e: PhonemeEvent) => void) | null>(null);
   const setPhonemeSink = useCallback((sink: (e: PhonemeEvent) => void) => {
@@ -389,10 +390,74 @@ export default function RealtimePage() {
     setRemoteAudioStream(stream);
   };
 
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
+
+  const handleWebRTCError = (error: any, context: string) => {
+    console.error(`[${context}]`, error);
+    let userMessage = "Connection failed";
+    if (error?.name === "NotAllowedError")
+      userMessage = "Microphone access denied. Please allow the mic and retry.";
+    else if (error?.name === "NotFoundError")
+      userMessage = "No microphone found. Connect one and retry.";
+    else if (error?.name === "NotReadableError")
+      userMessage =
+        "Microphone busy in another app. Close it (Zoom/Meet/etc.) and retry.";
+    setError(userMessage);
+    setStatus("Error");
+    setConnecting(false);
+    setConnected(false);
+  };
+
+  const attemptReconnect = useCallback(async () => {
+    if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+      setReconnectAttempts((prev) => prev + 1);
+      setStatus(`Reconnecting... (${reconnectAttempts + 1}/${MAX_RECONNECT_ATTEMPTS})`);
+      setTimeout(() => startSession(), 2000 * (reconnectAttempts + 1));
+    } else {
+      setError("Failed to reconnect after multiple attempts. Please refresh the page.");
+      setStatus("Connection Failed");
+    }
+  }, [reconnectAttempts]);
+
+  const monitorAudioLevel = useCallback(() => {
+    if (!analyserRef.current) return;
+    const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
+    analyserRef.current.getByteFrequencyData(dataArray);
+    const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+    setAudioLevel(average);
+    setIsListening(average > 10);
+    animationFrameRef.current = requestAnimationFrame(monitorAudioLevel);
+  }, []);
+
+  function waitForIceCompleteWithTimeout(pc: RTCPeerConnection, timeoutMs = 3000) {
+    return new Promise<void>((resolve) => {
+      if (pc.iceGatheringState === "complete") return resolve();
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        pc.removeEventListener("icegatheringstatechange", onChange);
+        resolve();
+      };
+      const onChange = () => {
+        console.log("[ICE] gathering state:", pc.iceGatheringState);
+        if (pc.iceGatheringState === "complete") finish();
+      };
+      pc.addEventListener("icegatheringstatechange", onChange);
+      setTimeout(() => {
+        console.warn("[ICE] Timeout waiting for complete; proceeding");
+        finish();
+      }, timeoutMs);
+    });
+  }
+
   async function startSession() {
     try {
       setConnecting(true);
       setError(null);
+      setStatus("Requesting microphone access...");
 
       const local = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -404,18 +469,40 @@ export default function RealtimePage() {
       });
       localStreamRef.current = local;
 
+      try {
+        audioContextRef.current = new AudioContext();
+        analyserRef.current = audioContextRef.current.createAnalyser();
+        const source = audioContextRef.current.createMediaStreamSource(local);
+        source.connect(analyserRef.current);
+        analyserRef.current.fftSize = 256;
+        monitorAudioLevel();
+      } catch (audioError) {
+        console.warn("Audio monitoring setup failed:", audioError);
+      }
+
+      setStatus("Creating connection...");
       const pc = new RTCPeerConnection({
         iceServers: [{ urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] }],
       });
       pcRef.current = pc;
 
+      pc.oniceconnectionstatechange = () => {
+        console.log("[ICE] conn state:", pc.iceConnectionState);
+        if (pc.iceConnectionState === "disconnected" || pc.iceConnectionState === "failed") {
+          if (connected) attemptReconnect();
+        }
+      };
+
       pc.onconnectionstatechange = () => {
         console.log("[PC] state:", pc.connectionState);
         if (pc.connectionState === "connected") {
           setConnected(true);
+          setStatus("Connected — start speaking!");
           setConnecting(false);
+          setReconnectAttempts(0);
         } else if (pc.connectionState === "disconnected" || pc.connectionState === "failed") {
           setConnected(false);
+          if (!connecting) attemptReconnect();
         }
       };
 
@@ -440,10 +527,47 @@ export default function RealtimePage() {
         console.log("[PC] ontrack:", e.track.kind);
         for (const t of e.streams[0].getTracks()) remoteStream.addTrack(t);
         setRemoteAudioStreamWithLogging(remoteStream);
+        console.log("[PC] Avatar stream set, tracks:", remoteStream.getTracks().length);
 
+        // Enhanced audio element setup
         if (remoteAudioElRef.current) {
+          remoteAudioElRef.current.addEventListener('loadstart', () => {
+            console.log("🔊 Audio loading started");
+          });
+          
+          remoteAudioElRef.current.addEventListener('loadeddata', () => {
+            console.log("🔊 Audio data loaded");
+          });
+          
+          remoteAudioElRef.current.addEventListener('canplay', () => {
+            console.log("🔊 Audio can play");
+          });
+          
+          remoteAudioElRef.current.addEventListener('play', () => {
+            console.log("🔊 Audio started playing at:", remoteAudioElRef.current!.currentTime);
+          });
+          
+          remoteAudioElRef.current.addEventListener('timeupdate', () => {
+            // Debug occasionally
+            if (Math.random() < 0.01) {
+              console.log("🔊 Audio time update:", remoteAudioElRef.current!.currentTime);
+            }
+          });
+          
+          remoteAudioElRef.current.addEventListener('ended', () => {
+            console.log("🔊 Audio ended");
+            visemePlayerRef.current?.stop();
+          });
+          
+          remoteAudioElRef.current.addEventListener('pause', () => {
+            console.log("🔊 Audio paused");
+          });
+          
+          // Ensure autoplay works
           remoteAudioElRef.current.autoplay = true;
           remoteAudioElRef.current.playsInline = true;
+          
+          // Set volume to ensure we can hear it
           remoteAudioElRef.current.volume = 1.0;
         }
 
@@ -466,7 +590,7 @@ export default function RealtimePage() {
           console.log("🔊 Audio autoplay successful");
         } catch (err) {
           console.warn("🔊 Autoplay blocked:", err);
-          setError("Click anywhere to enable audio");
+          setError("Click anywhere to enable audio playback");
         }
       };
 
@@ -475,6 +599,23 @@ export default function RealtimePage() {
 
       dc.onopen = () => {
         console.log("[DC] open");
+        setStatus("Connected — configuring AI...");
+
+        dc.send(JSON.stringify({
+          type: "session.update",
+          session: {
+            modalities: ["audio", "text"],
+            voice: "sage",
+            turn_detection: {
+              type: "server_vad",
+              threshold: 0.4,
+              prefix_padding_ms: 200,
+              silence_duration_ms: 600,
+              create_response: true,
+              interrupt_response: true,
+            },
+          },
+        }));
 
         dc.send(JSON.stringify({
           type: "session.update",
@@ -504,6 +645,7 @@ export default function RealtimePage() {
 
       // Enhanced message handler with perfect synchronization
       dc.onmessage = (evt) => {
+        console.log("[DC msg]", evt.data);
         try {
           const msg = JSON.parse(evt.data);
           const responseId = msg?.response_id || msg?.id || `response_${Date.now()}`;
@@ -561,8 +703,15 @@ export default function RealtimePage() {
             visemePlayerRef.current?.stop();
           }
 
+          // Handle audio buffer stopping
+          if (msg?.type === "output_audio_buffer.stopped") {
+            console.log("🔊 Audio buffer stopped - stopping visemes");
+            visemePlayerRef.current?.stop();
+          }
+
           if (msg?.type === "error") {
             setError(msg?.error?.message || "AI service error");
+            setStatus("AI Error");
           }
         } catch {
           // Ignore non-JSON
@@ -571,37 +720,58 @@ export default function RealtimePage() {
 
       dc.onerror = (e) => {
         console.error("[DC] error:", e);
-        setError("Connection error");
+        setError("Data channel error — trying to reconnect...");
+        attemptReconnect();
       };
 
+      dc.onclose = () => {
+        console.log("[DC] closed");
+        if (connected) {
+          setStatus("Disconnected");
+          setConnected(false);
+        }
+      };
+
+      setStatus("Establishing connection...");
       const offer = await pc.createOffer({ offerToReceiveAudio: true });
       await pc.setLocalDescription(offer);
+      await waitForIceCompleteWithTimeout(pc);
 
       const sdp = pc.localDescription?.sdp || "";
+      setStatus("Connecting to AI service...");
 
       const answerResp = await fetch(
         `/api/realtime/offer?model=${encodeURIComponent(REALTIME_MODEL)}`,
         { method: "POST", headers: { "Content-Type": "application/sdp" }, body: sdp }
       );
 
+      console.log("[OFFER] status:", answerResp.status);
       const answerText = await answerResp.text();
       if (!answerResp.ok) {
+        console.error("[OFFER failed]", answerText);
         throw new Error(`Server error: ${answerText}`);
       }
 
       await pc.setRemoteDescription({ type: "answer", sdp: answerText });
+      setStatus("Connected — waiting for audio...");
     } catch (e: any) {
       console.error(e);
-      setError(e.message || "Connection failed");
-      setConnecting(false);
-      setConnected(false);
+      handleWebRTCError(e, "StartSession");
     }
   }
 
   function stopSession() {
+    setStatus("Stopping...");
+
     visemePlayerRef.current?.stop();
-    
+
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
+    try { audioContextRef.current?.close(); } catch {}
     try { dcRef.current?.close(); } catch {}
+    try { pcRef.current?.getSenders().forEach((s) => s.track?.stop()); } catch {}
     try { pcRef.current?.close(); } catch {}
     try { localStreamRef.current?.getTracks().forEach((t) => t.stop()); } catch {}
 
@@ -615,21 +785,36 @@ export default function RealtimePage() {
     pcRef.current = null;
     localStreamRef.current = null;
     setRemoteAudioStreamWithLogging(null);
+    audioContextRef.current = null;
+    analyserRef.current = null;
 
     setConnected(false);
     setConnecting(false);
-    setIsSpeaking(false);
+    setReconnectAttempts(0);
+    setAudioLevel(0);
     setIsListening(false);
+    setIsSpeaking(false);
+    setStatus("Idle");
   }
+
+  useEffect(() => {
+    return () => {
+      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+      try { audioContextRef.current?.close(); } catch {}
+      try { dcRef.current?.close(); } catch {}
+      try { pcRef.current?.close(); } catch {}
+      if (remoteAudioElRef.current) {
+        try { (remoteAudioElRef.current.srcObject as MediaStream | null) = null; } catch {}
+        remoteAudioElRef.current.remove();
+      }
+      visemePlayerRef.current?.stop();
+    };
+  }, []);
 
   const enableAudio = async () => {
     if (remoteAudioElRef.current) {
-      try { 
-        await remoteAudioElRef.current.play(); 
-        setError(null); 
-      } catch (e) { 
-        console.warn("Audio still blocked:", e); 
-      }
+      try { await remoteAudioElRef.current.play(); setError(null); }
+      catch (e) { console.warn("Still blocked:", e); }
     }
   };
 
@@ -644,7 +829,7 @@ export default function RealtimePage() {
           character="Kea"
           isListening={isListening}
           isSpeaking={isSpeaking}
-          audioLevel={0}
+          audioLevel={audioLevel}
           remoteAudioStream={remoteAudioStream}
           avatarUrl="https://models.readyplayer.me/68b61ace83ef17237fd6e69f.glb?pose=T&morphTargets=ARKit,Oculus%20Visemes&textureAtlas=1024"
           realtimeDC={dcRef.current}
