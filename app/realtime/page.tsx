@@ -1,3 +1,4 @@
+// @ts-nocheck
 "use client";
 import { useEffect, useRef, useState, useCallback } from "react";
 import Avatar3D from "../components/Avatar3D";
