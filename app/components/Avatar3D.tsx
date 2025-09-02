@@ -254,7 +254,7 @@ function RPMAvatar({ character, avatarUrl }: Pick<RPMAvatarProps, "character" | 
       // Upper arms - bring down from T-pose with more downward rotation
       if (bones.leftArm) {
         console.log("Adjusting left arm - increased downward rotation:");
-        const naturalX = 0.082 + 1.3;    // Increase rotation to face more downward
+        const naturalX = 0.082 + 1.6;    // Increase rotation to face more downward
         const naturalY = 0.076;          // Keep original Y
         const naturalZ = 0.201;          // Keep original Z
         
@@ -264,7 +264,7 @@ function RPMAvatar({ character, avatarUrl }: Pick<RPMAvatarProps, "character" | 
       
       if (bones.rightArm) {
         console.log("Adjusting right arm - increased downward rotation:");
-        const naturalX = 0.082 + 1.3;    // Increase rotation to face more downward
+        const naturalX = 0.082 + 1.6;    // Increase rotation to face more downward
         const naturalY = -0.076;         // Keep original Y  
         const naturalZ = -0.201;         // Keep original Z
         
@@ -279,7 +279,7 @@ function RPMAvatar({ character, avatarUrl }: Pick<RPMAvatarProps, "character" | 
         
         // Reduced elbow bend - half the previous rotation
         const originalX = bones.leftForeArm.rotation.x;
-        const bendX = originalX + 0.08; // Reduced from 0.4 to 0.2
+        const bendX = originalX + 0.2; // Reduced from 0.4 to 0.2
         
         bones.leftForeArm.rotation.set(bendX, bones.leftForeArm.rotation.y, bones.leftForeArm.rotation.z);
         console.log(`Left elbow bend applied: x=${bendX.toFixed(3)}`);
@@ -291,7 +291,7 @@ function RPMAvatar({ character, avatarUrl }: Pick<RPMAvatarProps, "character" | 
         
         // Reduced elbow bend - half the previous rotation
         const originalX = bones.rightForeArm.rotation.x;
-        const bendX = originalX + 0.08; // Reduced from 0.4 to 0.2
+        const bendX = originalX + 0.2; // Reduced from 0.4 to 0.2
         
         bones.rightForeArm.rotation.set(bendX, bones.rightForeArm.rotation.y, bones.rightForeArm.rotation.z);
         console.log(`Right elbow bend applied: x=${bendX.toFixed(3)}`);
@@ -739,7 +739,7 @@ export default function RPMAvatar3D({
   const noVisemes = performance.now() - (lastVisemeAtRef.current || 0) > 1000;
 
   return (
-    <div className="relative w-full h-full bg-gradient-to-b from-purple-100 to-white overflow-hidden">
+    <div className="relative w-full h-full bg-gradient-to-b from-purple-100 to-white rounded-lg overflow-hidden">
       <Canvas camera={{ position: [0, 0, 3], fov: 50 }} shadows>
         {/* Professional lighting setup similar to Ready Player Me */}
         
